@@ -20,9 +20,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:node",
+    "build": "npm run build:node && npm run build:browser",
     "build:node": "tsc && tsc --module esnext --outDir dist/esm && mv dist/esm/index.js dist/index.mjs",
-    "build:browser": "echo 'Browser build temporarily disabled - node-rsa dependency not browser-compatible'",
+    "build:browser": "webpack --config webpack.config.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

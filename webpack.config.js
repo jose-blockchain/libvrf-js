@@ -16,7 +16,9 @@ module.exports = {
     fallback: {
       crypto: false,
       stream: false,
-      buffer: false
+      buffer: false,
+      assert: false,
+      constants: false
     }
   },
   module: {
