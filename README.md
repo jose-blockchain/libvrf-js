@@ -1,6 +1,6 @@
 # libvrf-js
 
-[![CI](https://github.com/microsoft/libvrf/workflows/CI/badge.svg)](https://github.com/microsoft/libvrf/actions)
+[![CI](https://github.com/jose-blockchain/libvrf-js/workflows/CI/badge.svg)](https://github.com/jose-blockchain/libvrf-js/actions)
 [![npm version](https://badge.fury.io/js/libvrf.svg)](https://badge.fury.io/js/libvrf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -12,12 +12,12 @@ A Verifiable Random Function (VRF) is a cryptographic public-key primitive that,
 
 ## Features
 
-- 🔐 **Multiple VRF algorithms**: RSA-FDH, RSA-PSS-NOSALT, and EC VRF (RFC 9381)
-- 🌐 **Universal**: Works in Node.js and browsers
-- 📦 **Zero dependencies**: Uses native crypto APIs
-- 🎯 **Type-safe**: Written in TypeScript with full type definitions
-- ✅ **Well-tested**: Comprehensive test suite ported from C++ implementation
-- 🚀 **Production-ready**: Professional-grade cryptographic library
+- **Multiple VRF algorithms**: RSA-FDH, RSA-PSS-NOSALT, and EC VRF (RFC 9381)
+- **Universal**: Works in Node.js and browsers
+- **Zero dependencies**: Uses native crypto APIs
+- **Type-safe**: Written in TypeScript with full type definitions
+- **Well-tested**: Comprehensive test suite ported from C++ implementation
+- **Production-ready**: Professional-grade cryptographic library
 
 ## Installation
 
@@ -191,7 +191,7 @@ Represents a VRF proof.
 
 ## Security Considerations
 
-⚠️ **Important Security Notes:**
+**Important Security Notes:**
 
 1. **EC VRF RFC 9381 Compliance**: The EC VRF implementation (`EC_VRF_P256_SHA256_TAI`) uses a **simplified deterministic construction** and is **NOT RFC 9381 compliant**. See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for details. EC VRF proofs are **NOT interoperable** with RFC 9381 compliant implementations (including the C++ libvrf).
 
