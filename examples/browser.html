@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>libvrf-js Browser Example</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #0078d4;
+      padding-bottom: 10px;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 4px;
+    }
+    button {
+      background: #0078d4;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #006abc;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    textarea {
+      min-height: 100px;
+    }
+    .output {
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      margin: 10px 0;
+    }
+    .success {
+      color: #28a745;
+      font-weight: bold;
+    }
+    .error {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 libvrf-js Browser Example</h1>
+    
+    <div class="section">
+      <h2>1. Generate VRF Key Pair</h2>
+      <label for="vrfType">Select VRF Type:</label>
+      <select id="vrfType">
+        <option value="EC_VRF_P256_SHA256_TAI">EC VRF P256-SHA256-TAI</option>
+        <option value="RSA_FDH_VRF_RSA2048_SHA256">RSA-FDH VRF RSA2048-SHA256</option>
+        <option value="RSA_PSS_NOSALT_VRF_RSA2048_SHA256">RSA-PSS-NOSALT VRF RSA2048-SHA256</option>
+      </select>
+      <br><br>
+      <button onclick="generateKeyPair()">Generate Key Pair</button>
+      <div id="keyPairOutput"></div>
+    </div>
+
+    <div class="section">
+      <h2>2. Generate VRF Proof</h2>
+      <label for="inputData">Input Data:</label>
+      <input type="text" id="inputData" placeholder="Enter text to create proof for" value="hello world">
+      <br>
+      <button onclick="generateProof()" id="generateProofBtn" disabled>Generate Proof</button>
+      <div id="proofOutput"></div>
+    </div>
+
+    <div class="section">
+      <h2>3. Verify VRF Proof</h2>
+      <button onclick="verifyProof()" id="verifyProofBtn" disabled>Verify Proof</button>
+      <div id="verifyOutput"></div>
+    </div>
+
+    <div class="section">
+      <h2>4. Test Serialization</h2>
+      <button onclick="testSerialization()" id="serializationBtn" disabled>Test Serialization</button>
+      <div id="serializationOutput"></div>
+    </div>
+  </div>
+
+  <!-- Load the library -->
+  <script src="../dist/browser/libvrf.min.js"></script>
+  
+  <script>
+    let secretKey = null;
+    let publicKey = null;
+    let currentProof = null;
+    let currentInput = null;
+    let currentType = null;
+
+    function log(elementId, message, isError = false) {
+      const element = document.getElementById(elementId);
+      const className = isError ? 'error' : 'success';
+      element.innerHTML += `<div class="${className}">${message}</div>`;
+    }
+
+    function logOutput(elementId, label, value) {
+      const element = document.getElementById(elementId);
+      element.innerHTML += `<div class="output"><strong>${label}:</strong><br>${value}</div>`;
+    }
+
+    function clearOutput(elementId) {
+      document.getElementById(elementId).innerHTML = '';
+    }
+
+    function bytesToHex(bytes) {
+      return Array.from(bytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function generateKeyPair() {
+      clearOutput('keyPairOutput');
+      
+      const typeSelect = document.getElementById('vrfType');
+      currentType = libvrf.VRFType[typeSelect.value];
+      
+      log('keyPairOutput', 'Generating key pair...');
+      
+      try {
+        secretKey = libvrf.VRF.create(currentType);
+        
+        if (!secretKey || !secretKey.isInitialized()) {
+          log('keyPairOutput', 'Failed to create secret key', true);
+          return;
+        }
+        
+        publicKey = secretKey.getPublicKey();
+        
+        if (!publicKey || !publicKey.isInitialized()) {
+          log('keyPairOutput', 'Failed to get public key', true);
+          return;
+        }
+        
+        log('keyPairOutput', '✓ Key pair generated successfully!');
+        
+        const pkBytes = publicKey.toBytes();
+        logOutput('keyPairOutput', 'Public Key Size', `${pkBytes.length} bytes`);
+        logOutput('keyPairOutput', 'Public Key (first 64 hex chars)', 
+          bytesToHex(pkBytes).substring(0, 64) + '...');
+        
+        // Enable other buttons
+        document.getElementById('generateProofBtn').disabled = false;
+        document.getElementById('serializationBtn').disabled = false;
+        
+      } catch (error) {
+        log('keyPairOutput', `Error: ${error.message}`, true);
+      }
+    }
+
+    function generateProof() {
+      clearOutput('proofOutput');
+      
+      const inputText = document.getElementById('inputData').value;
+      currentInput = new TextEncoder().encode(inputText);
+      
+      log('proofOutput', 'Generating proof...');
+      
+      try {
+        currentProof = secretKey.getVRFProof(currentInput);
+        
+        if (!currentProof || !currentProof.isInitialized()) {
+          log('proofOutput', 'Failed to create proof', true);
+          return;
+        }
+        
+        log('proofOutput', '✓ Proof generated successfully!');
+        
+        const proofBytes = currentProof.toBytes();
+        logOutput('proofOutput', 'Input', inputText);
+        logOutput('proofOutput', 'Proof Size', `${proofBytes.length} bytes`);
+        logOutput('proofOutput', 'Proof (first 64 hex chars)', 
+          bytesToHex(proofBytes).substring(0, 64) + '...');
+        
+        const vrfValue = currentProof.getVRFValue();
+        logOutput('proofOutput', 'VRF Value (hex)', bytesToHex(vrfValue));
+        
+        // Enable verify button
+        document.getElementById('verifyProofBtn').disabled = false;
+        
+      } catch (error) {
+        log('proofOutput', `Error: ${error.message}`, true);
+      }
+    }
+
+    function verifyProof() {
+      clearOutput('verifyOutput');
+      
+      log('verifyOutput', 'Verifying proof...');
+      
+      try {
+        const [success, vrfValue] = publicKey.verifyVRFProof(currentInput, currentProof);
+        
+        if (success) {
+          log('verifyOutput', '✓ Proof verified successfully!');
+          logOutput('verifyOutput', 'VRF Value (hex)', bytesToHex(vrfValue));
+          
+          // Test determinism
+          log('verifyOutput', '<br>Testing determinism...');
+          const proof2 = secretKey.getVRFProof(currentInput);
+          const [success2, vrfValue2] = publicKey.verifyVRFProof(currentInput, proof2);
+          
+          const proofsEqual = bytesToHex(currentProof.toBytes()) === bytesToHex(proof2.toBytes());
+          const valuesEqual = bytesToHex(vrfValue) === bytesToHex(vrfValue2);
+          
+          log('verifyOutput', `Proofs are deterministic: ${proofsEqual ? '✓' : '✗'}`);
+          log('verifyOutput', `VRF values match: ${valuesEqual ? '✓' : '✗'}`);
+          
+        } else {
+          log('verifyOutput', '✗ Proof verification failed!', true);
+        }
+        
+      } catch (error) {
+        log('verifyOutput', `Error: ${error.message}`, true);
+      }
+    }
+
+    function testSerialization() {
+      clearOutput('serializationOutput');
+      
+      log('serializationOutput', 'Testing serialization...');
+      
+      try {
+        // Serialize public key
+        const pkBytes = publicKey.toBytes();
+        log('serializationOutput', `✓ Public key serialized (${pkBytes.length} bytes)`);
+        
+        // Deserialize public key
+        const loadedPk = libvrf.VRF.publicKeyFromBytes(currentType, pkBytes);
+        if (!loadedPk || !loadedPk.isInitialized()) {
+          log('serializationOutput', '✗ Failed to deserialize public key', true);
+          return;
+        }
+        log('serializationOutput', '✓ Public key deserialized');
+        
+        // Serialize proof
+        const proofBytes = currentProof.toBytes();
+        log('serializationOutput', `✓ Proof serialized (${proofBytes.length} bytes)`);
+        
+        // Deserialize proof
+        const loadedProof = libvrf.VRF.proofFromBytes(currentType, proofBytes);
+        if (!loadedProof || !loadedProof.isInitialized()) {
+          log('serializationOutput', '✗ Failed to deserialize proof', true);
+          return;
+        }
+        log('serializationOutput', '✓ Proof deserialized');
+        
+        // Verify with loaded key and proof
+        const [success, vrfValue] = loadedPk.verifyVRFProof(currentInput, loadedProof);
+        if (success) {
+          log('serializationOutput', '✓ Verification successful with loaded key and proof!');
+          logOutput('serializationOutput', 'VRF Value', bytesToHex(vrfValue));
+        } else {
+          log('serializationOutput', '✗ Verification failed', true);
+        }
+        
+      } catch (error) {
+        log('serializationOutput', `Error: ${error.message}`, true);
+      }
+    }
+  </script>
+</body>
+</html>
+
