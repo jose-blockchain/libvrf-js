@@ -11,14 +11,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Setup Node.js (without cache)
+      uses: actions/setup-node@v3
       with:
         node-version: '20.x'
         registry-url: 'https://registry.npmjs.org'
-
-    - name: Generate package-lock.json
-      run: npm install --package-lock-only
 
     - name: Install dependencies
       run: npm install
