@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 module.exports = {
   mode: 'production',
@@ -16,11 +17,16 @@ module.exports = {
     fallback: {
       crypto: false,
       stream: false,
-      buffer: false,
+      buffer: require.resolve('buffer'),
       assert: false,
       constants: false
     }
   },
+  plugins: [
+    new webpack.ProvidePlugin({
+      Buffer: ['buffer', 'Buffer']
+    })
+  ],
   module: {
     rules: [
       {
