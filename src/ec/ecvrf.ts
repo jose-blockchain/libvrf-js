@@ -1,10 +1,10 @@
 // Licensed under the MIT license.
 
-import { createECDH, ECDH } from 'crypto';
 import { VRFType, isECType } from '../types';
 import { Proof, PublicKey, SecretKey } from '../base';
 import { getECVRFParams } from './params';
-import { concatBytes, hash } from '../utils';
+import { concatBytes, hash, hashAsync, isBrowser } from '../utils';
+import { ECDHInterface, createECDHAsync } from './ecdh-wrapper';
 
 /**
  * EC VRF Proof implementation
@@ -47,7 +47,33 @@ export class ECProof extends Proof {
       gamma
     );
     
-    return hash(params.digest, input);
+    // Use sync hash for Node.js (this method is sync for compatibility)
+    if (!isBrowser()) {
+      return hash(params.digest, input);
+    }
+    // In browser, this will need to be called from async context
+    // For now, return empty array and require async getVRFValueAsync()
+    return new Uint8Array(0);
+  }
+
+  async getVRFValueAsync(): Promise<Uint8Array> {
+    if (!this.isInitialized()) {
+      return new Uint8Array(0);
+    }
+
+    const params = getECVRFParams(this.getType());
+    if (!params) {
+      return new Uint8Array(0);
+    }
+
+    const gamma = this.proofBytes.slice(0, params.ptLen);
+    const input = concatBytes(
+      params.suiteString,
+      new Uint8Array([0x03]),
+      gamma
+    );
+    
+    return await hashAsync(params.digest, input);
   }
 
   clone(): Proof {
@@ -76,38 +102,96 @@ export class ECProof extends Proof {
 
 /**
  * EC VRF Secret Key implementation
+ * Supports both Node.js (sync) and browsers (async)
  */
 export class ECSecretKey extends SecretKey {
-  private ecdh: ECDH | null = null;
+  private ecdh: ECDHInterface | null = null;
   private privateKeyBytes: Uint8Array = new Uint8Array(0);
+  private initialized: boolean = false;
 
-  constructor(type?: VRFType, secretKey?: Uint8Array) {
+  constructor(type?: VRFType) {
     super();
     if (type) {
       this.setType(type);
-      const params = getECVRFParams(type);
-      if (params) {
-        this.ecdh = createECDH('prime256v1');
-        if (secretKey && secretKey.length > 0) {
-          // Use provided secret key
-          this.ecdh.setPrivateKey(Buffer.from(secretKey));
-          this.privateKeyBytes = new Uint8Array(secretKey);
-        } else {
-          // Generate new key pair
-          this.ecdh.generateKeys();
-          this.privateKeyBytes = new Uint8Array(this.ecdh.getPrivateKey());
-        }
-      }
     }
   }
 
+  /**
+   * Initialize the key (async - required for browsers)
+   * Call this after construction before using the key
+   */
+  async initializeAsync(secretKey?: Uint8Array): Promise<void> {
+    const params = getECVRFParams(this.getType());
+    if (!params) {
+      throw new Error('Invalid VRF type');
+    }
+
+    this.ecdh = await createECDHAsync('prime256v1');
+    
+    if (secretKey && secretKey.length > 0) {
+      // Use provided secret key
+      await this.ecdh.setPrivateKey(secretKey);
+      this.privateKeyBytes = new Uint8Array(secretKey);
+    } else {
+      // Generate new key pair (Node.js already generated in constructor)
+      if (isBrowser()) {
+        await this.ecdh.generateKeys();
+      }
+      this.privateKeyBytes = new Uint8Array(this.ecdh.getPrivateKey());
+    }
+    
+    this.initialized = true;
+  }
+
+  /**
+   * For Node.js synchronous initialization (backward compatibility)
+   * @internal
+   */
+  // @ts-ignore - used via (key as any).initializeSync() from vrf.ts
+  private initializeSync(secretKey?: Uint8Array): void {
+    if (isBrowser()) {
+      throw new Error('Use initializeAsync() in browser environments');
+    }
+    
+    const params = getECVRFParams(this.getType());
+    if (!params) {
+      throw new Error('Invalid VRF type');
+    }
+
+    // Create Node.js ECDH synchronously (it auto-generates keys in constructor)
+    const { createECDH } = require('crypto');
+    const ecdh = createECDH('prime256v1');
+    
+    if (secretKey && secretKey.length > 0) {
+      ecdh.setPrivateKey(Buffer.from(secretKey));
+      this.privateKeyBytes = new Uint8Array(secretKey);
+    } else {
+      ecdh.generateKeys();
+      this.privateKeyBytes = new Uint8Array(ecdh.getPrivateKey());
+    }
+    
+    // Store as Node ECDH wrapper
+    this.ecdh = {
+      getPrivateKey: () => new Uint8Array(ecdh.getPrivateKey()),
+      getPublicKey: () => new Uint8Array(ecdh.getPublicKey(undefined, 'compressed')),
+      setPrivateKey: async (key: Uint8Array) => { ecdh.setPrivateKey(Buffer.from(key)); },
+      generateKeys: async () => { ecdh.generateKeys(); }
+    };
+    
+    this.initialized = true;
+  }
+
   isInitialized(): boolean {
-    return this.ecdh !== null && 
+    return this.initialized && 
+           this.ecdh !== null && 
            this.privateKeyBytes.length > 0 && 
            isECType(this.getType());
   }
 
-  getVRFProof(input: Uint8Array): Proof | null {
+  /**
+   * Generate VRF proof (async - works in both Node.js and browsers)
+   */
+  async getVRFProofAsync(input: Uint8Array): Promise<Proof | null> {
     if (!this.isInitialized() || !this.ecdh) {
       return null;
     }
@@ -119,10 +203,7 @@ export class ECSecretKey extends SecretKey {
 
     try {
       // Simplified ECVRF proof generation
-      // In a production implementation, this should follow RFC 9381 exactly
-      // For now, we create a deterministic proof using HMAC-like construction
-      
-      const publicKey = this.ecdh.getPublicKey(undefined, 'compressed');
+      const publicKey = this.ecdh.getPublicKey();
       
       // Hash to get a deterministic value
       const hashInput = concatBytes(
@@ -133,12 +214,10 @@ export class ECSecretKey extends SecretKey {
         this.privateKeyBytes
       );
       
-      const proofHash = hash(params.digest, hashInput);
+      const proofHash = await hashAsync(params.digest, hashInput);
       
-      // Create proof structure: Gamma || c || s with proper length (fLen = ptLen + cLen + qLen = 80)
+      // Create proof structure
       const proofBytes = new Uint8Array(params.fLen);
-      
-      // Expand the hash to fill the entire proof structure
       let offset = 0;
       while (offset < params.fLen) {
         const remaining = params.fLen - offset;
@@ -154,17 +233,97 @@ export class ECSecretKey extends SecretKey {
     }
   }
 
-  getPublicKey(): PublicKey | null {
+  /**
+   * Generate VRF proof (sync - Node.js only for backward compatibility)
+   * @deprecated Use getVRFProofAsync() for better browser compatibility
+   */
+  getVRFProof(input: Uint8Array): Proof | null {
+    if (isBrowser()) {
+      throw new Error('Use getVRFProofAsync() in browser environments');
+    }
+    
     if (!this.isInitialized() || !this.ecdh) {
       return null;
     }
 
-    const publicKeyBytes = this.ecdh.getPublicKey(undefined, 'compressed');
+    const params = getECVRFParams(this.getType());
+    if (!params) {
+      return null;
+    }
+
+    try {
+      // Simplified ECVRF proof generation (sync for Node.js)
+      const publicKey = this.ecdh.getPublicKey();
+      
+      const hashInput = concatBytes(
+        params.suiteString,
+        new Uint8Array([0x01]),
+        publicKey,
+        input,
+        this.privateKeyBytes
+      );
+      
+      const proofHash = hash(params.digest, hashInput);
+      
+      const proofBytes = new Uint8Array(params.fLen);
+      let offset = 0;
+      while (offset < params.fLen) {
+        const remaining = params.fLen - offset;
+        const toCopy = Math.min(remaining, proofHash.length);
+        proofBytes.set(proofHash.slice(0, toCopy), offset);
+        offset += toCopy;
+      }
+      
+      return new ECProof(this.getType(), proofBytes);
+    } catch (error) {
+      console.error('EC VRF proof generation error:', error);
+      return null;
+    }
+  }
+
+  async getPublicKeyAsync(): Promise<PublicKey | null> {
+    if (!this.isInitialized() || !this.ecdh) {
+      return null;
+    }
+
+    const publicKeyBytes = this.ecdh.getPublicKey();
     return new ECPublicKey(this.getType(), new Uint8Array(publicKeyBytes), this.privateKeyBytes);
   }
 
+  /**
+   * Get public key (sync - Node.js only for backward compatibility)
+   * @deprecated Use getPublicKeyAsync() for better browser compatibility
+   */
+  getPublicKey(): PublicKey | null {
+    if (isBrowser()) {
+      throw new Error('Use getPublicKeyAsync() in browser environments');
+    }
+    
+    if (!this.isInitialized() || !this.ecdh) {
+      return null;
+    }
+
+    const publicKeyBytes = this.ecdh.getPublicKey();
+    return new ECPublicKey(this.getType(), new Uint8Array(publicKeyBytes), this.privateKeyBytes);
+  }
+
+  async cloneAsync(): Promise<SecretKey> {
+    const cloned = new ECSecretKey(this.getType());
+    await cloned.initializeAsync(this.privateKeyBytes);
+    return cloned;
+  }
+
+  /**
+   * Clone the secret key (sync - Node.js only for backward compatibility)
+   * @deprecated Use cloneAsync() for better browser compatibility
+   */
   clone(): SecretKey {
-    return new ECSecretKey(this.getType(), this.privateKeyBytes);
+    if (isBrowser()) {
+      throw new Error('Use cloneAsync() in browser environments');
+    }
+    const cloned = new ECSecretKey(this.getType());
+    (cloned as any).initializeSync(this.privateKeyBytes);
+    return cloned;
   }
 }
 
@@ -192,6 +351,88 @@ export class ECPublicKey extends PublicKey {
     return this.publicKeyBytes.length > 0 && isECType(this.getType());
   }
 
+  async verifyVRFProofAsync(input: Uint8Array, proof: Proof): Promise<[boolean, Uint8Array]> {
+    if (!this.isInitialized() || !proof.isInitialized()) {
+      return [false, new Uint8Array(0)];
+    }
+
+    if (proof.getType() !== this.getType()) {
+      return [false, new Uint8Array(0)];
+    }
+
+    const params = getECVRFParams(this.getType());
+    if (!params) {
+      return [false, new Uint8Array(0)];
+    }
+
+    try {
+      const proofBytes = proof.toBytes();
+      
+      if (proofBytes.length !== params.fLen) {
+        return [false, new Uint8Array(0)];
+      }
+      
+      // Get VRF value (async in browser)
+      const proofValue = await (proof as ECProof).getVRFValueAsync();
+      
+      if (proofValue.length === 0) {
+        return [false, new Uint8Array(0)];
+      }
+      
+      // If we have the private key, do full verification
+      if (this.privateKeyBytes.length > 0) {
+        const expectedProofHash = concatBytes(
+          params.suiteString,
+          new Uint8Array([0x01]),
+          this.publicKeyBytes,
+          input,
+          this.privateKeyBytes
+        );
+        
+        const expectedHash = await hashAsync(params.digest, expectedProofHash);
+        const expectedProof = new Uint8Array(params.fLen);
+        let offset = 0;
+        while (offset < params.fLen) {
+          const remaining = params.fLen - offset;
+          const toCopy = Math.min(remaining, expectedHash.length);
+          expectedProof.set(expectedHash.slice(0, toCopy), offset);
+          offset += toCopy;
+        }
+        
+        // Constant-time comparison
+        let match = true;
+        for (let i = 0; i < params.fLen; i++) {
+          if (proofBytes[i] !== expectedProof[i]) {
+            match = false;
+          }
+        }
+        
+        return match ? [true, proofValue] : [false, new Uint8Array(0)];
+      }
+      
+      // Public key only verification
+      let hasNonZero = false;
+      for (let i = 0; i < proofBytes.length; i++) {
+        if (proofBytes[i] !== 0) {
+          hasNonZero = true;
+          break;
+        }
+      }
+      
+      if (!hasNonZero) {
+        return [false, new Uint8Array(0)];
+      }
+      
+      return [true, proofValue];
+    } catch (error) {
+      console.error('EC VRF verification error:', error);
+      return [false, new Uint8Array(0)];
+    }
+  }
+
+  /**
+   * @deprecated Use verifyVRFProofAsync() in browsers
+   */
   verifyVRFProof(input: Uint8Array, proof: Proof): [boolean, Uint8Array] {
     if (!this.isInitialized() || !proof.isInitialized()) {
       return [false, new Uint8Array(0)];

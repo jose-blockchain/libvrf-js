@@ -4,22 +4,57 @@ import { VRFType, isRSAType, isECType } from './types';
 import { Proof, PublicKey, SecretKey } from './base';
 import { ECSecretKey, ECProof, ECPublicKey } from './ec/ecvrf';
 import { RSASecretKey, RSAProof, RSAPublicKey } from './rsa/rsavrf';
+import { isBrowser } from './utils';
 
 /**
  * The main VRF class that encapsulates VRF operations. All methods are static.
  */
 export class VRF {
   /**
+   * Create a new VRF secret key (async - works in both Node.js and browsers)
+   */
+  static async createAsync(type: VRFType): Promise<SecretKey | null> {
+    try {
+      if (isRSAType(type)) {
+        return new RSASecretKey(type);
+      }
+      
+      if (isECType(type)) {
+        const key = new ECSecretKey(type);
+        await key.initializeAsync();
+        return key;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('VRF creation error:', error);
+      return null;
+    }
+  }
+
+  /**
    * Creates a new VRF secret key for the specified VRF type.
+   * For browsers and EC VRF, prefer using createAsync().
    * Returns the created secret key object, or null if key generation fails.
    */
   static create(type: VRFType): SecretKey | null {
+    if (isBrowser()) {
+      throw new Error('Use VRF.createAsync() in browser environments');
+    }
+    
     try {
-      if (isECType(type)) {
-        return new ECSecretKey(type);
-      } else if (isRSAType(type)) {
+      if (isRSAType(type)) {
         return new RSASecretKey(type);
       }
+      
+      if (isECType(type)) {
+        // For Node.js EC VRF, create and initialize synchronously
+        const key = new ECSecretKey(type);
+        // Use private sync init method for Node.js backward compatibility
+        (key as any).initializeSync();
+        return key.isInitialized() ? key : null;
+      }
+      
       return null;
     } catch (error) {
       return null;
@@ -72,4 +107,5 @@ export class VRF {
     }
   }
 }
+
 

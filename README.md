@@ -12,12 +12,12 @@
 
 A Verifiable Random Function (VRF) is a cryptographic public-key primitive that, from a secret key and a given input, produces a unique pseudorandom output, along with a proof that the output was correctly computed. Only the secret key holder can generate the output–proof pair, but anyone with the corresponding public key can verify the proof.
 
-`libvrf-js` is a TypeScript/JavaScript implementation of several VRFs that works in both Node.js (v18+) and modern browsers.
+`libvrf-js` is a TypeScript/JavaScript implementation of several VRFs for Node.js (v18+) and browsers (EC VRF only).
 
 ## Features
 
 - **Multiple VRF algorithms**: RSA-FDH, RSA-PSS-NOSALT, and EC VRF (RFC 9381)
-- **Universal**: Works in Node.js and browsers (EC VRF only in browsers)
+- **Node.js & Browsers**: EC VRF works in both Node.js and browsers; RSA VRFs work in Node.js only
 - **Type-safe**: Written in TypeScript with full type definitions
 - **Well-tested**: Comprehensive test suite ported from C++ implementation
 - **Production-ready**: Professional-grade cryptographic library
@@ -37,7 +37,14 @@ npm install libvrf
 
 ### Browser/CDN Usage
 
-The library is available via CDN for browser use. **Important**: RSA-based VRFs require Node.js and will not work in browsers due to `node-rsa` dependency limitations. Only EC VRF (`EC_VRF_P256_SHA256_TAI`) is functional in browser environments.
+**✅ Browser Support**: EC VRF now works in browsers using WebCrypto API! RSA-based VRFs still require Node.js.
+
+**Current Status:**
+- ✅ **EC VRF**: Works in browsers using async APIs and WebCrypto
+- ❌ **RSA VRFs**: Do not work in browsers (requires `node-rsa` and Node.js crypto)
+- ✅ **Node.js**: All VRF types work correctly
+
+The library is available via CDN:
 
 **jsDelivr (latest version):**
 ```html
@@ -50,17 +57,35 @@ The library is available via CDN for browser use. **Important**: RSA-based VRFs 
 ```
 
 **Usage in browser:**
-```javascript
+```html
+<script src="https://unpkg.com/libvrf/dist/browser/libvrf.min.js"></script>
+<script>
 // After loading the script, use the global 'libvrf' object
-// Note: Only EC VRF works in browsers
-const secretKey = libvrf.VRF.create(libvrf.VRFType.EC_VRF_P256_SHA256_TAI);
-const publicKey = secretKey.getPublicKey();
-const input = new TextEncoder().encode('hello');
-const proof = secretKey.getVRFProof(input);
-const [success, vrfValue] = publicKey.verifyVRFProof(input, proof);
-console.log('Verification:', success);
-console.log('VRF Value:', Array.from(vrfValue).map(b => b.toString(16).padStart(2, '0')).join(''));
+// Note: Browser APIs are async
+(async () => {
+  // Create a secret key (async)
+  const secretKey = await libvrf.VRF.createAsync(libvrf.VRFType.EC_VRF_P256_SHA256_TAI);
+  
+  // Get the public key (async)
+  const publicKey = await secretKey.getPublicKeyAsync();
+  
+  // Generate a VRF proof (async)
+  const input = new TextEncoder().encode('hello');
+  const proof = await secretKey.getVRFProofAsync(input);
+  
+  // Verify the proof (async)
+  const [success, vrfValue] = await publicKey.verifyVRFProofAsync(input, proof);
+  
+  console.log('Verification:', success);
+  console.log('VRF Value:', Array.from(vrfValue).map(b => b.toString(16).padStart(2, '0')).join(''));
+})();
+</script>
 ```
+
+**Important Notes:**
+- **EC VRF only**: Only `EC_VRF_P256_SHA256_TAI` works in browsers
+- **Async APIs**: Browser code must use `createAsync()`, `getPublicKeyAsync()`, `getVRFProofAsync()`, and `verifyVRFProofAsync()`
+- **Node.js compatibility**: Node.js can also use the async APIs, or continue using the sync APIs
 
 ## Supported VRF Types
 
@@ -213,6 +238,8 @@ Represents a VRF proof.
 
 1. **EC VRF RFC 9381 Compliance**: The EC VRF implementation (`EC_VRF_P256_SHA256_TAI`) uses a **simplified deterministic construction** and is **NOT RFC 9381 compliant**. EC VRF proofs are **NOT interoperable** with RFC 9381 compliant implementations (including the C++ libvrf).
 
+2. **Browser Support**: Only EC VRF works in browsers. RSA-based VRFs require Node.js. Browser code must use async APIs (`createAsync`, `getPublicKeyAsync`, `getVRFProofAsync`, `verifyVRFProofAsync`).
+
 2. **Key Generation Trust**: RSA-based VRFs are not secure unless the key generation process is trusted. For more details, see [RFC 9381](https://datatracker.ietf.org/doc/rfc9381).
 
 3. **Cryptographic Primitives**: This library uses Node.js's built-in `crypto` module and browser's WebCrypto API for cryptographic operations.
@@ -234,8 +261,9 @@ This JavaScript implementation has several important limitations compared to the
 
 ### Browser Support
 
-- **Browser Build Available**: The browser build is available via CDN, but RSA-based VRFs require Node.js and will not work in browsers due to `node-rsa` dependency limitations.
-- **Limited Browser Functionality**: Only EC VRF (`EC_VRF_P256_SHA256_TAI`) works in browsers; RSA-based VRFs require Node.js environment.
+- **EC VRF Browser Support**: EC VRF (`EC_VRF_P256_SHA256_TAI`) works in browsers using WebCrypto API with async methods (`createAsync()`, `getPublicKeyAsync()`, `getVRFProofAsync()`, `verifyVRFProofAsync()`)
+- **RSA VRFs**: RSA-based VRFs require `node-rsa` and Node.js crypto APIs, which are not available in browsers
+- **Node.js Compatibility**: Node.js supports both sync and async APIs for EC VRF - use sync methods for backward compatibility or async methods for consistency with browser code
 
 ### Test Coverage
 

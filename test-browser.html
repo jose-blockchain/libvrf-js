@@ -33,9 +33,10 @@
 <body>
     <div class="container">
         <h1>libvrf-js Browser Test</h1>
+        <p>Testing EC VRF in browser using async APIs</p>
         <div id="output"></div>
     </div>
-
+    
     <script>
         const output = document.getElementById('output');
         
@@ -48,54 +49,56 @@
         }
 
         function logError(message) {
-            log('Error: ' + message, true);
+            log(message, true);
         }
 
-        function runTest() {
+        async function runTest() {
+            if (typeof libvrf === 'undefined') {
+                logError('libvrf is not defined - script may not have loaded');
+                return;
+            }
+            
             try {
-                // Check if libvrf is loaded
-                if (typeof libvrf === 'undefined') {
-                    log('Error: libvrf is not defined. Waiting for script to load...', true);
-                    setTimeout(runTest, 100);
-                    return;
-                }
-
                 log('Testing browser code from README...\n');
                 
                 // After loading the script, use the global 'libvrf' object
-                // Note: Only EC VRF works in browsers
-                const secretKey = libvrf.VRF.create(libvrf.VRFType.EC_VRF_P256_SHA256_TAI);
+                // EC VRF works in browsers using async APIs
+                log('Creating secret key...');
+                const secretKey = await libvrf.VRF.createAsync(libvrf.VRFType.EC_VRF_P256_SHA256_TAI);
                 
                 if (!secretKey) {
                     throw new Error('Failed to create secret key');
                 }
                 
-                const publicKey = secretKey.getPublicKey();
+                log('Getting public key...');
+                const publicKey = await secretKey.getPublicKeyAsync();
                 
                 if (!publicKey) {
                     throw new Error('Failed to get public key');
                 }
                 
+                log('Generating proof...');
                 const input = new TextEncoder().encode('hello');
-                const proof = secretKey.getVRFProof(input);
+                const proof = await secretKey.getVRFProofAsync(input);
                 
                 if (!proof) {
-                    throw new Error('Failed to create proof');
+                    throw new Error('Failed to generate proof');
                 }
                 
-                const [success, vrfValue] = publicKey.verifyVRFProof(input, proof);
+                log('Verifying proof...');
+                const [success, vrfValue] = await publicKey.verifyVRFProofAsync(input, proof);
                 
                 log('Verification: ' + success);
                 log('VRF Value: ' + Array.from(vrfValue).map(b => b.toString(16).padStart(2, '0')).join(''));
                 
-                if (success) {
+                if (success && vrfValue.length > 0) {
                     log('\n✓ All tests passed! Browser code works correctly.');
                 } else {
-                    log('\n✗ Verification failed!', true);
+                    logError('✗ Verification failed');
                 }
             } catch (error) {
-                log('Error: ' + error.message, true);
-                log('Stack: ' + error.stack, true);
+                logError('Error: ' + (error.message || error));
+                logError('Stack: ' + (error.stack || ''));
             }
         }
 
@@ -112,4 +115,3 @@
     </script>
 </body>
 </html>
-

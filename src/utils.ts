@@ -57,15 +57,38 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Hash data using specified algorithm
+ * Hash data using specified algorithm (sync version for Node.js)
  */
 export function hash(algorithm: string, data: Uint8Array): Uint8Array {
   if (isBrowser()) {
-    throw new Error('Browser crypto not yet implemented for hash');
+    throw new Error('Use hashAsync() in browser environments');
   }
   const hashObj = createHash(algorithm);
   hashObj.update(data);
   return new Uint8Array(hashObj.digest());
+}
+
+/**
+ * Hash data using specified algorithm (async version for both Node.js and browsers)
+ */
+export async function hashAsync(algorithm: string, data: Uint8Array): Promise<Uint8Array> {
+  if (isBrowser()) {
+    // Browser path using WebCrypto API
+    const algoMap: { [key: string]: string } = {
+      'sha256': 'SHA-256',
+      'sha384': 'SHA-384', 
+      'sha512': 'SHA-512'
+    };
+    const webCryptoAlgo = algoMap[algorithm.toLowerCase()];
+    if (!webCryptoAlgo) {
+      throw new Error(`Unsupported hash algorithm: ${algorithm}`);
+    }
+    const crypto = (globalThis as any).window?.crypto || (globalThis as any).crypto;
+    const hashBuffer = await crypto.subtle.digest(webCryptoAlgo, data);
+    return new Uint8Array(hashBuffer);
+  }
+  // Node.js path - return sync result as resolved promise
+  return Promise.resolve(hash(algorithm, data));
 }
 
 /**
