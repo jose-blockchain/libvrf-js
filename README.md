@@ -17,8 +17,7 @@ A Verifiable Random Function (VRF) is a cryptographic public-key primitive that,
 ## Features
 
 - **Multiple VRF algorithms**: RSA-FDH, RSA-PSS-NOSALT, and EC VRF (RFC 9381)
-- **Universal**: Works in Node.js and browsers
-- **Zero dependencies**: Uses native crypto APIs
+- **Universal**: Works in Node.js and browsers (EC VRF only in browsers)
 - **Type-safe**: Written in TypeScript with full type definitions
 - **Well-tested**: Comprehensive test suite ported from C++ implementation
 - **Production-ready**: Professional-grade cryptographic library
@@ -30,8 +29,11 @@ npm install libvrf
 ```
 
 **Requirements:**
-- Node.js v24 (Krypton LTS) or later
-- npm v11+
+- Node.js v18.0.0 or later
+- npm v9+ (or compatible package manager)
+
+**Dependencies:**
+- `node-rsa` (^1.1.1) - Used for RSA-based VRF operations only. EC VRF uses Node.js built-in crypto.
 
 ### Browser/CDN Usage
 
@@ -53,8 +55,11 @@ The library is available via CDN for browser use. **Important**: RSA-based VRFs 
 // Note: Only EC VRF works in browsers
 const secretKey = libvrf.VRF.create(libvrf.VRFType.EC_VRF_P256_SHA256_TAI);
 const publicKey = secretKey.getPublicKey();
-const proof = secretKey.getVRFProof(new TextEncoder().encode('hello'));
-const [success, vrfValue] = publicKey.verifyVRFProof(new TextEncoder().encode('hello'), proof);
+const input = new TextEncoder().encode('hello');
+const proof = secretKey.getVRFProof(input);
+const [success, vrfValue] = publicKey.verifyVRFProof(input, proof);
+console.log('Verification:', success);
+console.log('VRF Value:', Array.from(vrfValue).map(b => b.toString(16).padStart(2, '0')).join(''));
 ```
 
 ## Supported VRF Types
@@ -85,36 +90,20 @@ import { VRF, VRFType } from 'libvrf';
 
 // 1. Choose a VRF type and generate a key pair
 const type = VRFType.RSA_FDH_VRF_RSA2048_SHA256;
-const secretKey = VRF.create(type);
-
-if (!secretKey || !secretKey.isInitialized()) {
-  throw new Error('VRF secret key creation failed');
-}
+const secretKey = VRF.create(type)!;
 
 // 2. Get the public key
-const publicKey = secretKey.getPublicKey();
-
-if (!publicKey || !publicKey.isInitialized()) {
-  throw new Error('VRF public key creation failed');
-}
+const publicKey = secretKey.getPublicKey()!;
 
 // 3. Generate a VRF proof for some input
 const input = new TextEncoder().encode('hello world');
-const proof = secretKey.getVRFProof(input);
-
-if (!proof || !proof.isInitialized()) {
-  throw new Error('Proof creation failed');
-}
+const proof = secretKey.getVRFProof(input)!;
 
 // 4. Verify the proof and get the VRF value
 const [success, vrfValue] = publicKey.verifyVRFProof(input, proof);
 
-if (success) {
-  console.log('Proof verified successfully!');
-  console.log('VRF Value:', Buffer.from(vrfValue).toString('hex'));
-} else {
-  console.log('Proof verification failed');
-}
+console.log('Proof verified:', success);
+console.log('VRF Value:', Buffer.from(vrfValue).toString('hex'));
 ```
 
 ### Serialization
@@ -123,27 +112,28 @@ if (success) {
 import { VRF, VRFType } from 'libvrf';
 
 const type = VRFType.EC_VRF_P256_SHA256_TAI;
-const secretKey = VRF.create(type);
-const publicKey = secretKey.getPublicKey();
+const secretKey = VRF.create(type)!;
+const publicKey = secretKey.getPublicKey()!;
 
 // Serialize public key (DER-encoded SPKI)
 const publicKeyBytes = publicKey.toBytes();
 console.log('Public key size:', publicKeyBytes.length, 'bytes');
 
 // Deserialize public key
-const loadedPublicKey = VRF.publicKeyFromBytes(type, publicKeyBytes);
+const loadedPublicKey = VRF.publicKeyFromBytes(type, publicKeyBytes)!;
 
 // Serialize proof
 const input = new Uint8Array([1, 2, 3, 4, 5]);
-const proof = secretKey.getVRFProof(input);
+const proof = secretKey.getVRFProof(input)!;
 const proofBytes = proof.toBytes();
 
 // Deserialize proof
-const loadedProof = VRF.proofFromBytes(type, proofBytes);
+const loadedProof = VRF.proofFromBytes(type, proofBytes)!;
 
 // Verify with loaded key and proof
 const [success, vrfValue] = loadedPublicKey.verifyVRFProof(input, loadedProof);
 console.log('Verification:', success);
+console.log('VRF Value:', Buffer.from(vrfValue).toString('hex'));
 ```
 
 ### Using Different VRF Types
@@ -152,13 +142,13 @@ console.log('Verification:', success);
 import { VRF, VRFType } from 'libvrf';
 
 // EC VRF (fastest, smallest keys)
-const ecKey = VRF.create(VRFType.EC_VRF_P256_SHA256_TAI);
+const ecKey = VRF.create(VRFType.EC_VRF_P256_SHA256_TAI)!;
 
 // RSA-FDH VRF (widely compatible)
-const rsaFdhKey = VRF.create(VRFType.RSA_FDH_VRF_RSA2048_SHA256);
+const rsaFdhKey = VRF.create(VRFType.RSA_FDH_VRF_RSA2048_SHA256)!;
 
 // RSA-PSS VRF (based on RSA-PSS signatures)
-const rsaPssKey = VRF.create(VRFType.RSA_PSS_NOSALT_VRF_RSA2048_SHA256);
+const rsaPssKey = VRF.create(VRFType.RSA_PSS_NOSALT_VRF_RSA2048_SHA256)!;
 ```
 
 ## API Reference
@@ -221,7 +211,7 @@ Represents a VRF proof.
 
 **Important Security Notes:**
 
-1. **EC VRF RFC 9381 Compliance**: The EC VRF implementation (`EC_VRF_P256_SHA256_TAI`) uses a **simplified deterministic construction** and is **NOT RFC 9381 compliant**. See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for details. EC VRF proofs are **NOT interoperable** with RFC 9381 compliant implementations (including the C++ libvrf).
+1. **EC VRF RFC 9381 Compliance**: The EC VRF implementation (`EC_VRF_P256_SHA256_TAI`) uses a **simplified deterministic construction** and is **NOT RFC 9381 compliant**. EC VRF proofs are **NOT interoperable** with RFC 9381 compliant implementations (including the C++ libvrf).
 
 2. **Key Generation Trust**: RSA-based VRFs are not secure unless the key generation process is trusted. For more details, see [RFC 9381](https://datatracker.ietf.org/doc/rfc9381).
 
@@ -244,8 +234,8 @@ This JavaScript implementation has several important limitations compared to the
 
 ### Browser Support
 
-- **Browser Build Disabled**: The browser build is currently disabled due to `node-rsa` dependency not being browser-compatible. RSA-based VRFs require Node.js environment.
-- **Limited Browser Functionality**: Only EC VRF may work in browsers (if properly implemented), but RSA-based VRFs require Node.js.
+- **Browser Build Available**: The browser build is available via CDN, but RSA-based VRFs require Node.js and will not work in browsers due to `node-rsa` dependency limitations.
+- **Limited Browser Functionality**: Only EC VRF (`EC_VRF_P256_SHA256_TAI`) works in browsers; RSA-based VRFs require Node.js environment.
 
 ### Test Coverage
 
@@ -263,7 +253,6 @@ This JavaScript implementation has several important limitations compared to the
 - **For Interoperability**: Do not use this library's EC VRF in systems that need to interoperate with other VRF implementations.
 - **For Self-Contained Systems**: This library works well for systems where all components use `libvrf-js` exclusively.
 
-For detailed implementation notes, see [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md).
 
 ## Browser Support
 
@@ -311,7 +300,7 @@ See the [examples](examples/) directory for more usage examples:
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](../CONTRIBUTING.md) for details.
+Contributions are welcome! Please open an issue or submit a pull request on GitHub.
 
 ## License
 
@@ -323,7 +312,7 @@ This is a JavaScript/TypeScript port of the official [libvrf](https://github.com
 
 The original C++ implementation by Microsoft Corporation provides a robust, production-ready VRF library with comprehensive test coverage and full RFC 9381 compliance. This JavaScript port brings similar functionality to Node.js and browser environments while maintaining API compatibility with the original design.
 
-**Note**: The EC VRF implementation in this JavaScript port uses a simplified deterministic construction and is NOT RFC 9381 compliant. For RFC 9381 compliance and interoperability, use the original C++ implementation. See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for detailed compatibility information.
+**Note**: The EC VRF implementation in this JavaScript port uses a simplified deterministic construction and is NOT RFC 9381 compliant. For RFC 9381 compliance and interoperability, use the original C++ implementation.
 
 ## References
 
