@@ -5,6 +5,7 @@ import { Proof, PublicKey, SecretKey } from '../base';
 import { getECVRFParams } from './params';
 import { concatBytes, hash, hashAsync, isBrowser } from '../utils';
 import { ECDHInterface, createECDHAsync } from './ecdh-wrapper';
+import { createECDH } from 'crypto';
 
 /**
  * EC VRF Proof implementation
@@ -146,8 +147,9 @@ export class ECSecretKey extends SecretKey {
   /**
    * For Node.js synchronous initialization (backward compatibility)
    * @internal
+   * Used via (key as any).initializeSync() from vrf.ts and clone()
    */
-  // @ts-ignore - used via (key as any).initializeSync() from vrf.ts
+  // @ts-expect-error TS6133 - method is accessed via type assertion for backward compatibility
   private initializeSync(secretKey?: Uint8Array): void {
     if (isBrowser()) {
       throw new Error('Use initializeAsync() in browser environments');
@@ -159,7 +161,6 @@ export class ECSecretKey extends SecretKey {
     }
 
     // Create Node.js ECDH synchronously (it auto-generates keys in constructor)
-    const { createECDH } = require('crypto');
     const ecdh = createECDH('prime256v1');
     
     if (secretKey && secretKey.length > 0) {
@@ -322,6 +323,7 @@ export class ECSecretKey extends SecretKey {
       throw new Error('Use cloneAsync() in browser environments');
     }
     const cloned = new ECSecretKey(this.getType());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (cloned as any).initializeSync(this.privateKeyBytes);
     return cloned;
   }

@@ -107,6 +107,7 @@ class BrowserECDH implements ECDHInterface {
   }
 
   async generateKeys(): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const crypto = (globalThis as any).window?.crypto || (globalThis as any).crypto;
     
     const cryptoKeyPair = await crypto.subtle.generateKey(
@@ -170,6 +171,7 @@ class BrowserECDH implements ECDHInterface {
     // PublicKey = privateKey * G
     
     // Using WebCrypto, we can import the private key and export the public key
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const crypto = (globalThis as any).window?.crypto || (globalThis as any).crypto;
     
     // Create JWK for private key
